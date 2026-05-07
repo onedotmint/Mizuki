@@ -7,6 +7,9 @@ on:
         types: [content-updated]
     workflow_dispatch:
 
+env:
+    FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 jobs:
     check-and-build:
         name: 🛡️ 预检阶段 (Build Check)
@@ -16,55 +19,29 @@ jobs:
             - name: Checkout Code
               uses: actions/checkout@v5
 
+            - name: Install pnpm
+              uses: pnpm/action-setup@v4
+              with:
+                  version: 10.33.0
+
             - name: Setup Node.js 24
               uses: actions/setup-node@v5
               with:
                   node-version: 24
                   cache: pnpm
 
-            - name: Enable pnpm
-              run: |
-                  corepack enable
-                  corepack prepare pnpm@10.33.0 --activate
-                  pnpm --version
-
             - name: Install & Prepare Mock Content
               run: |
                   pnpm install --no-frozen-lockfile
 
-                  mkdir -p src/content/posts
-                  cat > src/content/posts/placeholder.md <<'EOF'
-                  ---
-                  title: Placeholder
-                  published: 2026-01-01
-                  description: Placeholder
-                  image: ''
-                  tags: []
-                  category: Placeholder
-                  draft: false
-                  ---
-                  Content
-                  EOF
+                  mkdir -p src/content/posts src/content/spec
 
-                  mkdir -p src/content/spec
+                  # 💡 改用 printf 配合单引号，避开 IDE 的 YAML 解析检测
+                  printf -- "---\ntitle: Placeholder\npublished: 2026-01-01\ndescription: Placeholder\nimage: ''\ntags: []\ncategory: Placeholder\ndraft: false\n---\nContent" > src/content/posts/placeholder.md
 
-                  cat > src/content/spec/about.md <<'EOF'
-                  ---
-                  title: About
-                  ---
-                  EOF
-
-                  cat > src/content/spec/friends.md <<'EOF'
-                  ---
-                  title: Friends
-                  ---
-                  EOF
-
-                  cat > src/content/spec/projects.md <<'EOF'
-                  ---
-                  title: Projects
-                  ---
-                  EOF
+                  for page in about friends projects; do
+                    printf -- "---\ntitle: Page\n---" > src/content/spec/$page.md
+                  done
 
             - name: Test Build
               run: pnpm run build
@@ -75,7 +52,6 @@ jobs:
         name: 🚀 远程部署 (Remote Deploy)
         needs: check-and-build
         runs-on: ubuntu-latest
-
         steps:
             - name: Remote SSH Command
               uses: appleboy/ssh-action@v1.2.5
@@ -85,20 +61,12 @@ jobs:
                   key: ${{ secrets.SERVER_SSH_KEY }}
                   script: |
                       set -e
-
                       cd /root/Mizuki
-
                       git pull origin master
-
                       if [ -d "content" ]; then
-                        cd content
-                        git pull origin master
-                        cd ..
+                        cd content && git pull origin master && cd ..
                       fi
-
                       export DOCKER_BUILDKIT=1
                       export COMPOSE_DOCKER_CLI_BUILD=1
-
                       docker compose up -d --build
-
                       docker image prune -f
