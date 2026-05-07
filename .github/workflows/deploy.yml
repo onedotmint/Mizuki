@@ -7,25 +7,26 @@ on:
         types: [content-updated]
     workflow_dispatch:
 
-# 💡 全局强制开启 Node 24 运行环境，消除所有插件的 Deprecation 警告
+# 强制开启 Node 24 运行环境，消除所有插件的 Deprecation 警告
 env:
     FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
+    # 阶段 1：预检 (在 GitHub 虚拟机上模拟构建，确保代码没 Bug)
     check-and-build:
         name: 🛡️ 预检阶段 (Build Check)
         runs-on: ubuntu-latest
         steps:
             - name: Checkout Code
-              uses: actions/checkout@v4
+              uses: actions/checkout@v4.2.2
 
             - name: Setup Node.js 24
-              uses: actions/setup-node@v4
+              uses: actions/setup-node@v4.3.0
               with:
                   node-version: 24
 
             - name: Setup pnpm
-              uses: pnpm/action-setup@v4
+              uses: pnpm/action-setup@v4.1.0
               with:
                   run_install: false
 
@@ -34,15 +35,15 @@ jobs:
                   pnpm install --no-frozen-lockfile
                   pnpm run build
               env:
-                  ENABLE_CONTENT_SYNC: false
+                  ENABLE_CONTENT_SYNC: false # 预检不需要拉取内容仓库
 
+    # 阶段 2：远程部署 (只有预检通过，才会登录你的服务器)
     deploy:
-        name: 🚀 部署阶段 (Remote Deploy)
+        name: 🚀 远程部署 (Remote Deploy)
         needs: check-and-build
         runs-on: ubuntu-latest
         steps:
             - name: Remote SSH Command
-              # 💡 升级 ssh-action 到最新稳定版
               uses: appleboy/ssh-action@v1.2.0
               with:
                   host: ${{ secrets.SERVER_HOST }}
@@ -50,9 +51,17 @@ jobs:
                   key: ${{ secrets.SERVER_SSH_KEY }}
                   script: |
                       cd /root/Mizuki
+                      echo "--- 正在同步代码 ---"
                       git pull origin master
+
                       if [ -d "content" ]; then
+                        echo "--- 正在同步内容仓库 ---"
                         cd content && git pull origin master && cd ..
                       fi
+
+                      echo "--- Docker 构建中 ---"
                       docker compose up -d --build
+
+                      echo "--- 清理冗余镜像 ---"
                       docker image prune -f
+                      echo "--- 部署成功！ ---"
