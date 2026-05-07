@@ -7,8 +7,11 @@ on:
         types: [content-updated]
     workflow_dispatch:
 
+# 💡 全局强制开启 Node 24 运行环境，消除所有插件的 Deprecation 警告
+env:
+    FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 jobs:
-    # 阶段 1：预检 (CI)
     check-and-build:
         name: 🛡️ 预检阶段 (Build Check)
         runs-on: ubuntu-latest
@@ -19,7 +22,7 @@ jobs:
             - name: Setup Node.js 24
               uses: actions/setup-node@v4
               with:
-                  node-version: 24 # 使用你想用的版本
+                  node-version: 24
 
             - name: Setup pnpm
               uses: pnpm/action-setup@v4
@@ -31,16 +34,16 @@ jobs:
                   pnpm install --no-frozen-lockfile
                   pnpm run build
               env:
-                  ENABLE_CONTENT_SYNC: false # 预检不需要拉取全部博文，只查语法
+                  ENABLE_CONTENT_SYNC: false
 
-    # 阶段 2：远程部署 (CD)
     deploy:
         name: 🚀 部署阶段 (Remote Deploy)
-        needs: check-and-build # 👈 关键：只有上面的任务成功，这一步才会启动
+        needs: check-and-build
         runs-on: ubuntu-latest
         steps:
             - name: Remote SSH Command
-              uses: appleboy/ssh-action@v1.0.3
+              # 💡 升级 ssh-action 到最新稳定版
+              uses: appleboy/ssh-action@v1.2.0
               with:
                   host: ${{ secrets.SERVER_HOST }}
                   username: ${{ secrets.SERVER_USER }}
