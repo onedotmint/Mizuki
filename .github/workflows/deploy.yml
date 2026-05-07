@@ -8,11 +8,9 @@ on:
     workflow_dispatch:
 
 env:
-    # 强制对齐 Node 24 运行环境
     FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
-    # 阶段 1：预检 (在云端模拟构建，确保代码逻辑无误)
     check-and-build:
         name: 🛡️ 预检阶段 (Build Check)
         runs-on: ubuntu-latest
@@ -34,11 +32,10 @@ jobs:
                   cache: pnpm
 
             - name: Install & Prepare Mock Content
-              # 💡 核心修复：创建临时占位文件，防止 Astro 因为找不到文章或关于页而崩溃
               run: |
                   pnpm install --no-frozen-lockfile
 
-                  # 创建占位文章
+                  # 1. 创建占位文章
                   mkdir -p src/content/posts
                   echo "---
                   title: Placeholder
@@ -49,21 +46,27 @@ jobs:
                   category: Placeholder
                   draft: false
                   ---
-                  Placeholder Content" > src/content/posts/placeholder.md
+                  Content" > src/content/posts/placeholder.md
 
-                  # 创建占位关于页 (解决 About page content not found 报错)
+                  # 2. 创建所有可能用到的 spec 页面占位符
                   mkdir -p src/content/spec
                   echo "---
                   title: About
-                  ---
-                  About page placeholder content" > src/content/spec/about.md
+                  ---" > src/content/spec/about.md
+
+                  echo "---
+                  title: Friends
+                  ---" > src/content/spec/friends.md
+
+                  echo "---
+                  title: Projects
+                  ---" > src/content/spec/projects.md
 
             - name: Test Build
               run: pnpm run build
               env:
                   ENABLE_CONTENT_SYNC: false
 
-    # 阶段 2：远程部署 (预检通过后，指挥 8 核服务器工作)
     deploy:
         name: 🚀 远程部署 (Remote Deploy)
         needs: check-and-build
@@ -77,17 +80,9 @@ jobs:
                   key: ${{ secrets.SERVER_SSH_KEY }}
                   script: |
                       cd /root/Mizuki
-                      echo "--- 正在同步 master 代码 ---"
                       git pull origin master
-
                       if [ -d "content" ]; then
-                        echo "--- 正在同步 Mizuki-post 内容 ---"
                         cd content && git pull origin master && cd ..
                       fi
-
-                      echo "--- 服务器 8 核全开：Docker 构建中 ---"
                       docker compose up -d --build
-
-                      echo "--- 清理无用镜像 ---"
                       docker image prune -f
-                      echo "--- 部署成功！ ---"
