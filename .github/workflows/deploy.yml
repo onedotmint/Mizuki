@@ -19,7 +19,7 @@ jobs:
                   host: ${{ secrets.SERVER_HOST }}
                   username: ${{ secrets.SERVER_USER }}
                   key: ${{ secrets.SERVER_SSH_KEY }}
-                  # 💡 下面这些指令是在你的服务器上执行的，不是在 GitHub 机器上执行的
+
                   script: |
                       cd /root/Mizuki
                       echo "--- 正在同步代码 ---"
