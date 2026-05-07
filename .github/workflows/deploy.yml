@@ -72,12 +72,22 @@ jobs:
                   script: |
                       set -e
 
+                      CONTENT_REPO_URL="git@github.com-mizuki:onedotmint/Mizuki-post.git"
+
                       cd /root/Mizuki
                       git pull origin master
 
-                      if [ -d "content" ]; then
-                        cd content && git pull origin master && cd ..
+                      if [ ! -d "content/.git" ]; then
+                        rm -rf content
+                        git clone "$CONTENT_REPO_URL" content
                       fi
+
+                      cd content
+                      git remote set-url origin "$CONTENT_REPO_URL"
+                      git fetch origin main
+                      git checkout main
+                      git reset --hard origin/main
+                      cd ..
 
                       export DOCKER_BUILDKIT=1
                       export COMPOSE_DOCKER_CLI_BUILD=1
