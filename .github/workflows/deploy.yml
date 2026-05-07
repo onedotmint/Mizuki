@@ -8,9 +8,11 @@ on:
     workflow_dispatch:
 
 env:
+    # 强制让 GitHub Actions 插件使用 Node 24 运行环境
     FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
+    # 阶段 1：预检 (确保代码和依赖在云端能跑通)
     check-and-build:
         name: 🛡️ 预检阶段 (Build Check)
         runs-on: ubuntu-latest
@@ -22,14 +24,14 @@ jobs:
             - name: Setup pnpm
               uses: pnpm/action-setup@v4
               with:
-                  version: 10
+                  # 💡 不再手动指定版本，自动从 package.json 的 packageManager 读取
                   run_install: false
 
             - name: Setup Node.js 24
               uses: actions/setup-node@v5
               with:
                   node-version: 24
-                  cache: pnpm
+                  cache: pnpm # 开启缓存，让第二次部署快如闪电
 
             - name: Install & Test Build
               run: |
@@ -38,6 +40,7 @@ jobs:
               env:
                   ENABLE_CONTENT_SYNC: false
 
+    # 阶段 2：远程部署 (预检通过后，让 8 核服务器接管)
     deploy:
         name: 🚀 远程部署 (Remote Deploy)
         needs: check-and-build
@@ -52,17 +55,17 @@ jobs:
                   key: ${{ secrets.SERVER_SSH_KEY }}
                   script: |
                       cd /root/Mizuki
-                      echo "--- 正在同步代码 ---"
+                      echo "--- 正在拉取 master 分支最新代码 ---"
                       git pull origin master
 
                       if [ -d "content" ]; then
-                        echo "--- 正在同步内容仓库 ---"
+                        echo "--- 正在同步博文内容 ---"
                         cd content && git pull origin master && cd ..
                       fi
 
-                      echo "--- Docker 构建中 ---"
+                      echo "--- 服务器 8 核全开：Docker 构建中 ---"
                       docker compose up -d --build
 
                       echo "--- 清理冗余镜像 ---"
                       docker image prune -f
-                      echo "--- 部署成功！ ---"
+                      echo "--- 部署成功！你的网站已更新 ---"
