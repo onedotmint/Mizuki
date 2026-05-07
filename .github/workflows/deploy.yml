@@ -7,31 +7,33 @@ on:
         types: [content-updated]
     workflow_dispatch:
 
+# 💡 全局环境变量：强制消除所有关于 Node 20 的烦人警告，并对齐 Node 24
 env:
-    # 强制让 GitHub Actions 插件使用 Node 24 运行环境
+    ACTIONS_ALLOW_USE_UNSECURE_NODE_VERSION: true
     FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
-    # 阶段 1：预检 (确保代码和依赖在云端能跑通)
+    # 阶段 1：预检 (确保代码在 GitHub 云端能编译成功)
     check-and-build:
         name: 🛡️ 预检阶段 (Build Check)
         runs-on: ubuntu-latest
 
         steps:
             - name: Checkout Code
-              uses: actions/checkout@v5
+              uses: actions/checkout@v4.2.2
 
             - name: Setup pnpm
-              uses: pnpm/action-setup@v4
+              uses: pnpm/action-setup@v4.1.0
               with:
-                  # 💡 不再手动指定版本，自动从 package.json 的 packageManager 读取
+                  # 💡 强制指定与 package.json 一致的版本，解决 Multiple versions 冲突
+                  version: 10.33.0
                   run_install: false
 
             - name: Setup Node.js 24
-              uses: actions/setup-node@v5
+              uses: actions/setup-node@v4.3.0
               with:
                   node-version: 24
-                  cache: pnpm # 开启缓存，让第二次部署快如闪电
+                  cache: pnpm
 
             - name: Install & Test Build
               run: |
@@ -40,12 +42,11 @@ jobs:
               env:
                   ENABLE_CONTENT_SYNC: false
 
-    # 阶段 2：远程部署 (预检通过后，让 8 核服务器接管)
+    # 阶段 2：远程部署 (预检通过后，通过 SSH 喊服务器干活)
     deploy:
         name: 🚀 远程部署 (Remote Deploy)
         needs: check-and-build
         runs-on: ubuntu-latest
-
         steps:
             - name: Remote SSH Command
               uses: appleboy/ssh-action@v1.2.0
@@ -55,7 +56,7 @@ jobs:
                   key: ${{ secrets.SERVER_SSH_KEY }}
                   script: |
                       cd /root/Mizuki
-                      echo "--- 正在拉取 master 分支最新代码 ---"
+                      echo "--- 正在拉取 master 分支代码 ---"
                       git pull origin master
 
                       if [ -d "content" ]; then
@@ -63,9 +64,9 @@ jobs:
                         cd content && git pull origin master && cd ..
                       fi
 
-                      echo "--- 服务器 8 核全开：Docker 构建中 ---"
+                      echo "--- 服务器 8 核发力：Docker 构建中 ---"
                       docker compose up -d --build
 
-                      echo "--- 清理冗余镜像 ---"
+                      echo "--- 清理无用镜像 ---"
                       docker image prune -f
-                      echo "--- 部署成功！你的网站已更新 ---"
+                      echo "--- 部署成功！ ---"
