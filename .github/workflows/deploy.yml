@@ -7,30 +7,87 @@ on:
         types: [content-updated]
     workflow_dispatch:
 
+env:
+    # 强制对齐 Node 24 运行环境
+    FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 jobs:
+    # 阶段 1：预检 (在云端模拟构建，确保代码逻辑无误)
     check-and-build:
         name: 🛡️ 预检阶段 (Build Check)
         runs-on: ubuntu-latest
+
         steps:
             - name: Checkout Code
-              uses: actions/checkout@v4
+              uses: actions/checkout@v4.2.2
 
             - name: Setup pnpm
-              uses: pnpm/action-setup@v4
+              uses: pnpm/action-setup@v4.1.0
               with:
                   version: 10.33.0
+                  run_install: false
 
-            - name: Setup Node.js
-              uses: actions/setup-node@v4
+            - name: Setup Node.js 24
+              uses: actions/setup-node@v4.3.0
               with:
                   node-version: 24
                   cache: pnpm
 
-            - name: Install & Test Build
-              # 💡 这里如果挂了，GitHub 会用红色高亮标出具体的错误行
+            - name: Install & Prepare Mock Content
+              # 💡 核心修复：创建临时占位文件，防止 Astro 因为找不到文章或关于页而崩溃
               run: |
-                  pnpm install
-                  pnpm run build
+                  pnpm install --no-frozen-lockfile
+
+                  # 创建占位文章
+                  mkdir -p src/content/posts
+                  echo "---
+                  title: Placeholder
+                  published: 2026-01-01
+                  description: Placeholder
+                  image: ''
+                  tags: []
+                  category: Placeholder
+                  draft: false
+                  ---
+                  Placeholder Content" > src/content/posts/placeholder.md
+
+                  # 创建占位关于页 (解决 About page content not found 报错)
+                  mkdir -p src/content/spec
+                  echo "---
+                  title: About
+                  ---
+                  About page placeholder content" > src/content/spec/about.md
+
+            - name: Test Build
+              run: pnpm run build
               env:
                   ENABLE_CONTENT_SYNC: false
-                  # 如果你的构建脚本需要密钥，这里也得加上，否则脚本会执行失败
+
+    # 阶段 2：远程部署 (预检通过后，指挥 8 核服务器工作)
+    deploy:
+        name: 🚀 远程部署 (Remote Deploy)
+        needs: check-and-build
+        runs-on: ubuntu-latest
+        steps:
+            - name: Remote SSH Command
+              uses: appleboy/ssh-action@v1.2.0
+              with:
+                  host: ${{ secrets.SERVER_HOST }}
+                  username: ${{ secrets.SERVER_USER }}
+                  key: ${{ secrets.SERVER_SSH_KEY }}
+                  script: |
+                      cd /root/Mizuki
+                      echo "--- 正在同步 master 代码 ---"
+                      git pull origin master
+
+                      if [ -d "content" ]; then
+                        echo "--- 正在同步 Mizuki-post 内容 ---"
+                        cd content && git pull origin master && cd ..
+                      fi
+
+                      echo "--- 服务器 8 核全开：Docker 构建中 ---"
+                      docker compose up -d --build
+
+                      echo "--- 清理无用镜像 ---"
+                      docker image prune -f
+                      echo "--- 部署成功！ ---"
