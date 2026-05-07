@@ -7,9 +7,6 @@ on:
         types: [content-updated]
     workflow_dispatch:
 
-env:
-    FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
-
 jobs:
     check-and-build:
         name: 🛡️ 预检阶段 (Build Check)
@@ -17,27 +14,27 @@ jobs:
 
         steps:
             - name: Checkout Code
-              uses: actions/checkout@v4.2.2
-
-            - name: Setup pnpm
-              uses: pnpm/action-setup@v4.1.0
-              with:
-                  version: 10.33.0
-                  run_install: false
+              uses: actions/checkout@v5
 
             - name: Setup Node.js 24
-              uses: actions/setup-node@v4.3.0
+              uses: actions/setup-node@v5
               with:
                   node-version: 24
                   cache: pnpm
+
+            - name: Enable pnpm
+              run: |
+                  corepack enable
+                  corepack prepare pnpm@10.33.0 --activate
+                  pnpm --version
 
             - name: Install & Prepare Mock Content
               run: |
                   pnpm install --no-frozen-lockfile
 
-                  # 1. 创建占位文章
                   mkdir -p src/content/posts
-                  echo "---
+                  cat > src/content/posts/placeholder.md <<'EOF'
+                  ---
                   title: Placeholder
                   published: 2026-01-01
                   description: Placeholder
@@ -46,21 +43,28 @@ jobs:
                   category: Placeholder
                   draft: false
                   ---
-                  Content" > src/content/posts/placeholder.md
+                  Content
+                  EOF
 
-                  # 2. 创建所有可能用到的 spec 页面占位符
                   mkdir -p src/content/spec
-                  echo "---
+
+                  cat > src/content/spec/about.md <<'EOF'
+                  ---
                   title: About
-                  ---" > src/content/spec/about.md
+                  ---
+                  EOF
 
-                  echo "---
+                  cat > src/content/spec/friends.md <<'EOF'
+                  ---
                   title: Friends
-                  ---" > src/content/spec/friends.md
+                  ---
+                  EOF
 
-                  echo "---
+                  cat > src/content/spec/projects.md <<'EOF'
+                  ---
                   title: Projects
-                  ---" > src/content/spec/projects.md
+                  ---
+                  EOF
 
             - name: Test Build
               run: pnpm run build
@@ -71,18 +75,30 @@ jobs:
         name: 🚀 远程部署 (Remote Deploy)
         needs: check-and-build
         runs-on: ubuntu-latest
+
         steps:
             - name: Remote SSH Command
-              uses: appleboy/ssh-action@v1.2.0
+              uses: appleboy/ssh-action@v1.2.5
               with:
                   host: ${{ secrets.SERVER_HOST }}
                   username: ${{ secrets.SERVER_USER }}
                   key: ${{ secrets.SERVER_SSH_KEY }}
                   script: |
+                      set -e
+
                       cd /root/Mizuki
+
                       git pull origin master
+
                       if [ -d "content" ]; then
-                        cd content && git pull origin master && cd ..
+                        cd content
+                        git pull origin master
+                        cd ..
                       fi
+
+                      export DOCKER_BUILDKIT=1
+                      export COMPOSE_DOCKER_CLI_BUILD=1
+
                       docker compose up -d --build
+
                       docker image prune -f
